@@ -1,0 +1,33 @@
+{
+    "name": "particle-academy/prism-browser",
+    "description": "Guarded browser automation for Prism agents — bounded observations, policy-first navigation, and durable sessions.",
+    "type": "library",
+    "license": "MIT",
+    "require": {
+        "php": "^8.2",
+        "ext-json": "*",
+        "ext-mbstring": "*",
+        "laravel/framework": "^12.61.1|^13.12.0",
+        "particle-academy/prism": ">=0.114 <1.0"
+    },
+    "require-dev": {
+        "laravel/pint": "^1.30",
+        "orchestra/testbench": "^10.0|^11.0",
+        "pestphp/pest": "^3.0|^4.0",
+        "phpstan/phpstan": "^2.0"
+    },
+    "suggest": {
+        "particle-academy/prism-harness": "Binds browser attachments to durable Harness sessions."
+    },
+    "autoload": {"psr-4": {"Prism\\Browser\\": "src/"}},
+    "autoload-dev": {"psr-4": {"Tests\\": "tests/"}},
+    "scripts": {
+        "test": "@php vendor/bin/pest",
+        "types": "@php vendor/bin/phpstan analyse",
+        "format": "@php vendor/bin/pint"
+    },
+    "extra": {"laravel": {"providers": ["Prism\\Browser\\PrismBrowserServiceProvider"]}},
+    "minimum-stability": "stable",
+    "prefer-stable": true,
+    "config": {"sort-packages": true, "allow-plugins": {"pestphp/pest-plugin": true}}
+}
