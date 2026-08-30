@@ -32,12 +32,12 @@ final readonly class BrowserManager
         return $attachment;
     }
 
-    public function navigate(string $id, string $url): Observation
+    public function navigate(string|object $owner, string $id, string $url): Observation
     {
         $this->policy->assertUrl($url);
 
-        return $this->store->lock($id, function () use ($id, $url): Observation {
-            $attachment = $this->required($id);
+        return $this->store->lock($id, function () use ($owner, $id, $url): Observation {
+            $attachment = $this->required($owner, $id);
             $observation = $this->engine->navigate($id, $url);
             $this->store->put($attachment->withObservation($observation->id, $this->engine->checkpoint($id)), $attachment->generation);
 
@@ -45,10 +45,10 @@ final readonly class BrowserManager
         });
     }
 
-    public function observe(string $id): Observation
+    public function observe(string|object $owner, string $id): Observation
     {
-        return $this->store->lock($id, function () use ($id): Observation {
-            $attachment = $this->required($id);
+        return $this->store->lock($id, function () use ($owner, $id): Observation {
+            $attachment = $this->required($owner, $id);
             $observation = $this->engine->observe($id);
             $this->store->put($attachment->withObservation($observation->id, $this->engine->checkpoint($id)), $attachment->generation);
 
@@ -56,12 +56,12 @@ final readonly class BrowserManager
         });
     }
 
-    public function act(string $id, BrowserAction $action): Observation
+    public function act(string|object $owner, string $id, BrowserAction $action): Observation
     {
         $this->policy->assertAction($action->kind);
 
-        return $this->store->lock($id, function () use ($id, $action): Observation {
-            $attachment = $this->required($id);
+        return $this->store->lock($id, function () use ($owner, $id, $action): Observation {
+            $attachment = $this->required($owner, $id);
             if ($attachment->currentObservationId !== $action->observationId) {
                 throw new BrowserRefused('stale_observation', 'Browser action references an observation that is no longer current.');
             }
@@ -79,15 +79,15 @@ final readonly class BrowserManager
         });
     }
 
-    public function status(string $id): BrowserAttachment
+    public function status(string|object $owner, string $id): BrowserAttachment
     {
-        return $this->required($id);
+        return $this->required($owner, $id);
     }
 
-    public function close(string $id): BrowserAttachment
+    public function close(string|object $owner, string $id): BrowserAttachment
     {
-        return $this->store->lock($id, function () use ($id): BrowserAttachment {
-            $attachment = $this->required($id);
+        return $this->store->lock($id, function () use ($owner, $id): BrowserAttachment {
+            $attachment = $this->required($owner, $id);
             $checkpoint = $this->engine->checkpoint($id);
             $this->engine->close($id);
             $closed = $attachment->closed($checkpoint);
@@ -97,11 +97,14 @@ final readonly class BrowserManager
         });
     }
 
-    private function required(string $id): BrowserAttachment
+    private function required(string|object $owner, string $id): BrowserAttachment
     {
         $attachment = $this->store->get($id);
         if ($attachment === null) {
             throw new BrowserRefused('attachment_not_found', 'Browser attachment does not exist.');
+        }
+        if (! hash_equals($attachment->owner, OwnerAddress::from($owner))) {
+            throw new BrowserRefused('attachment_owner_mismatch', 'Browser attachment does not belong to this owner.');
         }
         if ($attachment->state !== AttachmentState::Open) {
             throw new BrowserRefused('attachment_not_open', sprintf('Browser attachment is [%s].', $attachment->state->value));

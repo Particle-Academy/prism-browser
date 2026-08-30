@@ -55,12 +55,12 @@ function fakeBrowserEngine(): BrowserEngine
 it('binds actions to the current observation', function (): void {
     $manager = new BrowserManager(fakeBrowserEngine(), new InMemoryAttachmentStore, new BrowserPolicy(['example.com']));
     $attachment = $manager->open('session:one');
-    $observation = $manager->navigate($attachment->id, 'https://example.com');
+    $observation = $manager->navigate('session:one', $attachment->id, 'https://example.com');
 
-    $next = $manager->act($attachment->id, new BrowserAction(ActionKind::Click, $observation->id, 'e1'));
+    $next = $manager->act('session:one', $attachment->id, new BrowserAction(ActionKind::Click, $observation->id, 'e1'));
 
     expect($next->id)->toBe('obs_2')
-        ->and(fn () => $manager->act($attachment->id, new BrowserAction(ActionKind::Click, $observation->id, 'e1')))
+        ->and(fn () => $manager->act('session:one', $attachment->id, new BrowserAction(ActionKind::Click, $observation->id, 'e1')))
         ->toThrow(BrowserRefused::class, 'no longer current');
 });
 
@@ -69,16 +69,27 @@ it('refuses navigation before the engine sees it', function (): void {
     $manager = new BrowserManager($engine, new InMemoryAttachmentStore, new BrowserPolicy(['example.com']));
     $attachment = $manager->open('session:one');
 
-    expect(fn () => $manager->navigate($attachment->id, 'https://localhost/secrets'))->toThrow(BrowserRefused::class)
+    expect(fn () => $manager->navigate('session:one', $attachment->id, 'https://localhost/secrets'))->toThrow(BrowserRefused::class)
         ->and($engine->sequence)->toBe(0);
 });
 
 it('exposes a bounded typed Prism tool surface', function (): void {
     $manager = new BrowserManager(fakeBrowserEngine(), new InMemoryAttachmentStore, new BrowserPolicy(['example.com']));
     $attachment = $manager->open('session:one');
-    $tools = (new BrowserToolset($manager, new ObservationGuard(4096)))->forAttachment($attachment->id);
+    $tools = (new BrowserToolset($manager, new ObservationGuard(4096)))->forAttachment('session:one', $attachment->id);
 
     expect(array_map(fn ($tool) => $tool->name(), $tools))->toBe(['browser_navigate', 'browser_observe', 'browser_act', 'browser_status', 'browser_close'])
         ->and($tools[2]->needsApproval(['kind' => 'click']))->toBeTrue()
         ->and($tools[2]->needsApproval(['kind' => 'hover']))->toBeFalse();
+});
+
+it('refuses every operation when the attachment owner does not match', function (): void {
+    $manager = new BrowserManager(fakeBrowserEngine(), new InMemoryAttachmentStore, new BrowserPolicy(['example.com']));
+    $attachment = $manager->open('session:one');
+
+    expect(fn () => $manager->navigate('session:two', $attachment->id, 'https://example.com'))
+        ->toThrow(BrowserRefused::class, 'does not belong')
+        ->and(fn () => $manager->observe('session:two', $attachment->id))->toThrow(BrowserRefused::class, 'does not belong')
+        ->and(fn () => $manager->status('session:two', $attachment->id))->toThrow(BrowserRefused::class, 'does not belong')
+        ->and(fn () => $manager->close('session:two', $attachment->id))->toThrow(BrowserRefused::class, 'does not belong');
 });

@@ -37,12 +37,16 @@ use Prism\Browser\Security\BrowserPolicy;
 $policy = new BrowserPolicy(['docs.example.com'], requireHttps: true);
 $browser = new BrowserManager($engine, $store, $policy);
 $attachment = $browser->open($harnessSession->key());
-$observation = $browser->navigate($attachment->id, 'https://docs.example.com');
+$observation = $browser->navigate($harnessSession->key(), $attachment->id, 'https://docs.example.com');
 ```
 
 Do not expose an engine directly as a model tool. The safe model surface is a
 typed adapter over `open`, `navigate`, structured `observe`, stable-ref `act`,
 `status`, and `close`.
+
+Every operation after `open` requires the owner again. Attachment ids are
+capability locators, not bearer credentials: knowing another session's id does
+not authorize using its browser state.
 
 ## Security limits
 

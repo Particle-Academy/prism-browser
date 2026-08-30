@@ -6,6 +6,7 @@ namespace Prism\Browser\Stores;
 
 use Closure;
 use Illuminate\Contracts\Cache\Factory as CacheFactory;
+use Illuminate\Contracts\Cache\LockProvider;
 use Illuminate\Contracts\Cache\Repository;
 use Illuminate\Contracts\Encryption\Encrypter;
 use Prism\Browser\Contracts\AttachmentStore;
@@ -60,11 +61,12 @@ final readonly class LaravelAttachmentStore implements AttachmentStore
     public function lock(string $id, Closure $callback): mixed
     {
         $repository = $this->repository();
-        if (! method_exists($repository, 'lock')) {
+        $store = $repository->getStore();
+        if (! $store instanceof LockProvider) {
             throw new BrowserRefused('locking_unavailable', 'Configured browser attachment cache does not support atomic locks.');
         }
 
-        return $repository->lock($this->prefix.'lock:'.$id, 30)->block(5, $callback);
+        return $store->lock($this->prefix.'lock:'.$id, 30)->block(5, $callback);
     }
 
     private function repository(): Repository
