@@ -14,10 +14,13 @@ use Prism\Browser\Security\BrowserPolicy;
  * asserts "I match the reference", the thing it matched is still what the
  * reference produces.
  *
- * It also asserts the divergence FROM THIS SIDE. If a change here quietly
- * renamed `private_network_refused` to match the ports, the finding would
- * silently close and G-21 would be left describing a state of the world that no
- * longer existed.
+ * G-21 IS CLOSED AND ALL TWELVE ROWS NOW AGREE. The reference used to name
+ * three of them `private_network_refused` where both ports said
+ * `private_address_refused`; the reference adopted the ports' name, because the
+ * check is per-ADDRESS rather than per-network. Agreement is not safety, so the
+ * refusals themselves are asserted separately below — a corpus compares
+ * languages, and three languages agreeing on an ALLOW would look exactly like
+ * this one does now.
  */
 function urlPolicyCorpus(): array
 {
@@ -42,7 +45,7 @@ function refusalFor(array $case): ?string
 
         return null;
     } catch (BrowserRefused $refused) {
-        return $refused->reason;
+        return $refused->code();
     }
 }
 
@@ -56,34 +59,49 @@ it('still produces the refusal the corpus recorded for it', function (): void {
     }
 });
 
-it('still names three refusals differently from the ports', function (): void {
+it('names every refusal exactly as both ports do', function (): void {
     foreach (urlPolicyCorpus() as $case) {
         $produced = refusalFor($case);
 
-        $case['agrees']
-            ? expect($produced)->toBe($case['refusal']['ts'], $case['id'])
-            : expect($produced)->not->toBe($case['refusal']['ts'], $case['id']);
+        expect($produced)->toBe($case['refusal']['ts'], $case['id'])
+            ->and($produced)->toBe($case['refusal']['py'], $case['id']);
     }
 });
 
 it('REFUSES every private address, which is the claim the naming argument sits on top of', function (): void {
-    // Asserted separately from the code comparison on purpose. The divergence
-    // test above only compares strings; if a change here turned one of these
-    // into an allow, it would still pass. This is the row that would go red.
-    foreach (urlPolicyCorpus() as $case) {
-        if ($case['agrees']) {
-            continue;
-        }
+    // Asserted separately from the code comparison on purpose, and it is the
+    // reason G-21 was a rename rather than a hole. The comparison above only
+    // checks that this language produces the string the corpus recorded; if a
+    // change here turned one of these into an ALLOW, the corpus would be
+    // regenerated to record the allow and every comparison would stay green.
+    // This is the row that would go red.
+    $private = array_values(array_filter(
+        urlPolicyCorpus(),
+        fn (array $case): bool => $case['refusal']['php'] === 'private_address_refused',
+    ));
 
-        expect(refusalFor($case))->not->toBeNull($case['id']);
+    expect(array_map(fn (array $case): string => $case['id'], $private))
+        ->toBe(['url-0005', 'url-0006', 'url-0007']);
+
+    foreach ($private as $case) {
+        expect(refusalFor($case))->toBe('private_address_refused', $case['id']);
     }
 });
 
-it('names the divergent rows, so the count cannot drift silently', function (): void {
-    $diverging = array_values(array_map(
-        fn (array $case): string => $case['id'],
-        array_filter(urlPolicyCorpus(), fn (array $case): bool => $case['agrees'] === false),
-    ));
+it('no longer answers to the retired name anywhere in the corpus', function (): void {
+    // G-21's regression guard. The rename is only worth anything while nothing
+    // re-introduces the old spelling on one of the three paths that can emit it
+    // — this policy, the sidecar's literal check, and the sidecar's post-DNS
+    // check, whose code reaches a caller through `PlaywrightSidecarEngine`
+    // verbatim.
+    foreach (urlPolicyCorpus() as $case) {
+        foreach (['php', 'ts', 'py'] as $language) {
+            expect($case['refusal'][$language])->not->toBe('private_network_refused', $case['id']);
+        }
+    }
 
-    expect($diverging)->toBe(['url-0005', 'url-0006', 'url-0007']);
+    $sidecar = (string) file_get_contents(__DIR__.'/../../sidecar/security.mjs');
+
+    expect($sidecar)->not->toContain('private_network_refused')
+        ->and($sidecar)->toContain('private_address_refused');
 });

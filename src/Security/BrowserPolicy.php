@@ -40,8 +40,19 @@ final readonly class BrowserPolicy
             throw new BrowserRefused('https_required', 'Browser policy requires HTTPS.');
         }
 
+        // `private_address_refused`, not `private_network_refused`: the test
+        // below is per-ADDRESS, and an allow-list entry naming one does not
+        // widen it. G-21 — the two ports have always used this spelling, and
+        // the reference moved to it rather than the other way round.
         if ($this->isLocalOrPrivate($host)) {
-            throw new BrowserRefused('private_network_refused', 'Browser policy refuses local and private network targets.');
+            throw new BrowserRefused(
+                'private_address_refused',
+                sprintf(
+                    'Browser policy refuses the private or loopback address [%s]. A browser an agent can point at a '
+                    .'metadata endpoint or at localhost reaches services that assumed they were unreachable.',
+                    $host,
+                ),
+            );
         }
 
         if (! $this->matchesAllowedHost($host)) {

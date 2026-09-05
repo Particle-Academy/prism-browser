@@ -11,7 +11,7 @@ test('refuses private literals including IPv4-mapped IPv6', () => {
 });
 
 test('refuses a public hostname resolving to a private address', async () => {
-  await assert.rejects(() => assertUrl('https://example.com', policy, async () => [{address:'10.0.0.7', family:4}]), error => error.code === 'private_network_refused');
+  await assert.rejects(() => assertUrl('https://example.com', policy, async () => [{address:'10.0.0.7', family:4}]), error => error.code === 'private_address_refused');
 });
 
 test('accepts a declared host only when resolution remains public', async () => {

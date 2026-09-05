@@ -15,7 +15,7 @@ export async function assertUrl(raw, policy, lookup = dns.lookup) {
   const hostname = url.hostname.toLowerCase().replace(/\.$/, '');
   if (url.username || url.password) throw Object.assign(new Error(), {code: 'url_credentials_refused'});
   if (policy.require_https !== false && url.protocol !== 'https:') throw Object.assign(new Error(), {code: 'https_required'});
-  if (isPrivateLiteral(hostname)) throw Object.assign(new Error(), {code: 'private_network_refused'});
+  if (isPrivateLiteral(hostname)) throw Object.assign(new Error(), {code: 'private_address_refused'});
   const allowed = (policy.allowed_hosts ?? []).some(entry => {
     entry = entry.toLowerCase().replace(/\.$/, '');
     return hostname === entry || (entry.startsWith('*.') && hostname.endsWith(entry.slice(1)));
@@ -25,6 +25,6 @@ export async function assertUrl(raw, policy, lookup = dns.lookup) {
   if (!(policy.allowed_ports ?? [443]).includes(port)) throw Object.assign(new Error(), {code: 'port_not_allowed'});
   if (!net.isIP(hostname)) {
     const addresses = await lookup(hostname, {all:true, verbatim:true});
-    if (addresses.length === 0 || addresses.some(({address}) => isPrivateLiteral(address))) throw Object.assign(new Error(), {code:'private_network_refused'});
+    if (addresses.length === 0 || addresses.some(({address}) => isPrivateLiteral(address))) throw Object.assign(new Error(), {code:'private_address_refused'});
   }
 }
