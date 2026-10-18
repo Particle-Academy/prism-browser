@@ -50,7 +50,7 @@ function refusalFor(array $case): ?string
 }
 
 it('is the whole suite, not a subset someone trimmed to green', function (): void {
-    expect(urlPolicyCorpus())->toHaveCount(12);
+    expect(urlPolicyCorpus())->toHaveCount(18);
 });
 
 it('still produces the refusal the corpus recorded for it', function (): void {
@@ -81,7 +81,7 @@ it('REFUSES every private address, which is the claim the naming argument sits o
     ));
 
     expect(array_map(fn (array $case): string => $case['id'], $private))
-        ->toBe(['url-0005', 'url-0006', 'url-0007']);
+        ->toBe(['url-0005', 'url-0006', 'url-0007', 'url-0013', 'url-0014', 'url-0015', 'url-0016', 'url-0017']);
 
     foreach ($private as $case) {
         expect(refusalFor($case))->toBe('private_address_refused', $case['id']);
