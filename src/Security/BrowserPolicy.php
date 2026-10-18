@@ -104,10 +104,65 @@ final readonly class BrowserPolicy
 
         $ip = trim($host, '[]');
         if (filter_var($ip, FILTER_VALIDATE_IP) === false) {
-            return false;
+            // A browser reads shorthand, integer, octal and hex IPv4 (127.1,
+            // 0x7f000001, 2130706433) as an address, exactly as libc's
+            // inet_aton does; parse_url leaves them as names. Read the same
+            // way, without DNS, so they reach the address check.
+            $ip = self::inetAton($ip);
+
+            if ($ip === null) {
+                return false;
+            }
         }
 
         return self::isNonPublicAddress($ip);
+    }
+
+    /**
+     * libc's inet_aton: one to four dot-separated parts, each decimal, octal
+     * (leading 0) or hex (0x), the last filling every remaining byte. Null when
+     * the text is not such an address, so a name stays a name.
+     */
+    private static function inetAton(string $text): ?string
+    {
+        $parts = explode('.', $text);
+
+        if (count($parts) > 4) {
+            return null;
+        }
+
+        $values = [];
+
+        foreach ($parts as $part) {
+            if (preg_match('/^0x[0-9a-f]*$/i', $part) === 1) {
+                $values[] = $part === '0x' || $part === '0X' ? 0 : (int) hexdec(substr($part, 2));
+            } elseif (preg_match('/^0[0-7]*$/', $part) === 1) {
+                $values[] = (int) octdec($part);
+            } elseif (preg_match('/^[1-9][0-9]*$/', $part) === 1) {
+                $values[] = (int) $part;
+            } else {
+                return null;
+            }
+        }
+
+        $last = array_pop($values);
+        $value = 0;
+
+        foreach ($values as $index => $byte) {
+            if ($byte > 255) {
+                return null;
+            }
+
+            $value |= $byte << (8 * (3 - $index));
+        }
+
+        $remaining = 4 - count($values);
+
+        if ($last >= 1 << (8 * $remaining)) {
+            return null;
+        }
+
+        return long2ip($value | $last);
     }
 
     /**

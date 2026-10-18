@@ -88,3 +88,18 @@ it('allows an allow-listed public address, including through NAT64 and 6to4', fu
 
     expect(refusalCodeFor(fn () => $policy->assertUrl("https://{$host}/")))->toBe('no_refusal');
 })->with(['8.8.8.8', '[64:ff9b::808:808]', '[2002:808:808::1]', '[2606:4700:4700::1111]']);
+
+// A browser reads shorthand, integer, octal and hex IPv4 the way libc's
+// inet_aton does: all four of these navigate to 127.0.0.1. parse_url leaves them
+// as names, so they reached the allow-list instead of the address check.
+it('refuses shorthand IPv4 that a browser resolves to loopback, even when allow-listed', function (string $host): void {
+    $policy = new BrowserPolicy([$host]);
+
+    expect(refusalCodeFor(fn () => $policy->assertUrl("https://{$host}/")))->toBe('private_address_refused');
+})->with(['127.1', '0x7f000001', '2130706433', '0177.0.0.1', '0x7f.1', '169.254.43518', '0xa9fea9fe']);
+
+it('still treats names that only look numeric-ish as names', function (string $host): void {
+    $policy = new BrowserPolicy([$host]);
+
+    expect(refusalCodeFor(fn () => $policy->assertUrl("https://{$host}/")))->toBe('no_refusal');
+})->with(['8.8.8.8', '1e100.net', '123.example', '0x.example']);
