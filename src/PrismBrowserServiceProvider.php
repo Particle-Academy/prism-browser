@@ -6,6 +6,8 @@ namespace Prism\Browser;
 
 use Illuminate\Http\Client\Factory;
 use Illuminate\Support\ServiceProvider;
+use Prism\Browser\Capture\CaptureOrigins;
+use Prism\Browser\Capture\PageCapture;
 use Prism\Browser\Console\ServeCommand;
 use Prism\Browser\Contracts\AttachmentStore;
 use Prism\Browser\Contracts\BrowserEngine;
@@ -39,6 +41,19 @@ final class PrismBrowserServiceProvider extends ServiceProvider
                 (string) config('prism-browser.sidecar.url'),
                 $token,
                 (int) config('prism-browser.sidecar.timeout', 30),
+            );
+        });
+        $this->app->singleton(PageCapture::class, function ($app): PageCapture {
+            $token = config('prism-browser.sidecar.token');
+            if (! is_string($token) || strlen($token) < 32) {
+                throw new \RuntimeException('PRISM_BROWSER_TOKEN must contain at least 32 characters.');
+            }
+
+            return new PageCapture(
+                $app->make(Factory::class),
+                CaptureOrigins::parse((string) config('prism-browser.capture.origins', '')),
+                (string) config('prism-browser.sidecar.url'),
+                $token,
             );
         });
         $this->app->singleton(BrowserManager::class);

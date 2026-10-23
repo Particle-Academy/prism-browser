@@ -18,4 +18,9 @@ return [
         'require_https' => env('PRISM_BROWSER_REQUIRE_HTTPS', true),
         'max_observation_bytes' => (int) env('PRISM_BROWSER_MAX_OBSERVATION_BYTES', 65536),
     ],
+    // Page capture: the ONLY origins it may load, as exact scheme://host[:port], comma-separated. Declared here by
+    // the operator, never by a model or a request. Separate from `policy`: the agent browser is not affected.
+    'capture' => [
+        'origins' => (string) env('PRISM_BROWSER_CAPTURE_ORIGINS', ''),
+    ],
 ];

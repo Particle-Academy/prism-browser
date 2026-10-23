@@ -2,6 +2,7 @@ import http from 'node:http';
 import { timingSafeEqual } from 'node:crypto';
 import { chromium } from 'playwright';
 import { assertUrl } from './security.mjs';
+import { capture, parseOrigins, pinOrigins, readCaptureRequest, resolverRules } from './capture.mjs';
 
 const host = process.env.PRISM_BROWSER_HOST ?? '127.0.0.1';
 const port = Number(process.env.PRISM_BROWSER_PORT ?? 4319);
@@ -9,9 +10,20 @@ const token = process.env.PRISM_BROWSER_TOKEN;
 if (!token || token.length < 32) throw new Error('PRISM_BROWSER_TOKEN must contain at least 32 characters');
 if (!['127.0.0.1', '::1', 'localhost'].includes(host)) throw new Error('The local sidecar may bind only to loopback; use a separate authenticated remote adapter for remote engines');
 const egressProxy = process.env.PRISM_BROWSER_EGRESS_PROXY;
-if (!egressProxy && process.env.PRISM_BROWSER_ALLOW_UNVERIFIED_EGRESS !== '1') throw new Error('PRISM_BROWSER_EGRESS_PROXY is required; set PRISM_BROWSER_ALLOW_UNVERIFIED_EGRESS=1 only for explicit local development');
+const agentEgress = Boolean(egressProxy) || process.env.PRISM_BROWSER_ALLOW_UNVERIFIED_EGRESS === '1';
 
-const browser = await chromium.launch({headless: true, ...(egressProxy ? {proxy:{server:egressProxy}} : {})});
+// Page capture: operator-declared origins only, in their own pinned browser (see capture.mjs). Resolved once, here.
+const captureOrigins = parseOrigins(process.env.PRISM_BROWSER_CAPTURE_ORIGINS);
+const captureBrowser = captureOrigins.length === 0 ? null : await chromium.launch({
+  headless: true,
+  args: [`--host-resolver-rules=${resolverRules(await pinOrigins(captureOrigins))}`],
+});
+
+// The agent browser keeps its rule: no egress proxy, no start -- unless this sidecar serves capture only, in which case
+// every agent operation is refused instead (`egress_proxy_required`). Capture needs no proxy: its browser can resolve
+// nothing but the declared hosts.
+if (!agentEgress && captureBrowser === null) throw new Error('PRISM_BROWSER_EGRESS_PROXY is required; set PRISM_BROWSER_ALLOW_UNVERIFIED_EGRESS=1 only for explicit local development');
+const browser = agentEgress ? await chromium.launch({headless: true, ...(egressProxy ? {proxy:{server:egressProxy}} : {})}) : null;
 const sessions = new Map();
 
 async function observe(session) {
@@ -44,6 +56,11 @@ async function observe(session) {
 }
 
 async function operation(path, body) {
+  if (path === 'capture') {
+    if (captureBrowser === null) throw Object.assign(new Error(), {code:'capture_unavailable'});
+    return capture(captureBrowser, captureOrigins, readCaptureRequest(body));
+  }
+  if (browser === null) throw Object.assign(new Error(), {code:'egress_proxy_required'});
   if (path === 'open') {
     if (sessions.has(body.attachment)) throw Object.assign(new Error(), {code:'attachment_exists'});
     const storageState = body.checkpoint ? JSON.parse(Buffer.from(body.checkpoint, 'base64url').toString('utf8')) : undefined;
@@ -107,4 +124,4 @@ http.createServer(async (req, res) => {
   }
 }).listen(port, host, () => process.stdout.write(`prism-browser sidecar listening on http://${host}:${port}\n`));
 
-for (const signal of ['SIGINT','SIGTERM']) process.on(signal, async () => { await browser.close(); process.exit(0); });
+for (const signal of ['SIGINT','SIGTERM']) process.on(signal, async () => { await browser?.close(); await captureBrowser?.close(); process.exit(0); });

@@ -33,6 +33,10 @@ final class ServeCommand extends Command
             'PRISM_BROWSER_TOKEN' => $token,
             'PRISM_BROWSER_ALLOW_UNVERIFIED_EGRESS' => (bool) config('prism-browser.sidecar.allow_unverified_egress', false) ? '1' : '0',
         ];
+        $origins = config('prism-browser.capture.origins');
+        if (is_string($origins) && trim($origins) !== '') {
+            $environment['PRISM_BROWSER_CAPTURE_ORIGINS'] = $origins;
+        }
         $proxy = config('prism-browser.sidecar.egress_proxy');
         if (is_string($proxy) && $proxy !== '') {
             $environment['PRISM_BROWSER_EGRESS_PROXY'] = $proxy;
