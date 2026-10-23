@@ -70,8 +70,11 @@ test('capture, end to end in a pinned Chromium', async (t) => {
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
   const origin = `http://capture.test:${server.address().port}`;
   const pins = await pinOrigins([origin], async () => [{ address: '127.0.0.1', family: 4 }]);
-  const browser = await chromium.launch({ headless: true, args: [`--host-resolver-rules=${resolverRules(pins)}`] });
-  t.after(async () => { await browser.close(); server.close(); off.close(); });
+  // Cleanup is registered BEFORE the launch: a launch that throws (no browser installed) left both servers listening,
+  // and node --test then never exited -- a CI job that hung for four hours instead of failing.
+  let browser;
+  t.after(async () => { await browser?.close(); server.close(); off.close(); });
+  browser = await chromium.launch({ headless: true, args: [`--host-resolver-rules=${resolverRules(pins)}`] });
   const run = (path, extra = {}) => capture(browser, [origin], readCaptureRequest({ url: `${origin}${path}`, widths: [375], timeout_ms: 20000, ...extra }));
   const pngSize = (base64) => { const b = Buffer.from(base64, 'base64'); return { signature: b.subarray(0, 8).toString('hex'), width: b.readUInt32BE(16), height: b.readUInt32BE(20) }; };
 
