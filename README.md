@@ -70,6 +70,10 @@ Refusal codes: `capture_origin_not_declared`, `invalid_capture_options`,
 `capture_unavailable`, `invalid_capture_origin`, `capture_origin_private`,
 `capture_origin_unresolved`.
 
+**A screenshot is page content.** Handing it to a model hands that model
+whatever the page renders, instructions included; treat the image, and the
+`smallTargets` labels, as untrusted input the way an observation is.
+
 PHP only: the TypeScript and Python ports ship no engine.
 
 Human+ is not a browser mode. Joining a Fancy surface belongs to
