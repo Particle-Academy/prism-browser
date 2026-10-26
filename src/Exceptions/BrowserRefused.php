@@ -44,7 +44,7 @@ final class BrowserRefused extends RuntimeException
 {
     /**
      * @param  array<string, mixed>  $context  machine-readable detail for this code, e.g. `failed_images` for
-     *                                         `capture_images_failed`; empty for most refusals
+     *                                         `capture_images_failed`, or `failed_fonts` for `capture_fonts_failed`; empty for most refusals
      */
     public function __construct(private readonly string $errorCode, string $message, private readonly array $context = [])
     {

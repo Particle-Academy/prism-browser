@@ -14,12 +14,19 @@ namespace Prism\Browser\Capture;
  * - $images: each <img>, at most 100, as the source the browser actually selected (`currentSrc`, so the srcset
  *   variant), cut at 2048 characters, and its intrinsic size; 0 x 0 for an image that did not load. $imagesTotal
  *   counts all of them. The source is page content: untrusted.
+ * - $fonts: declared FontFaces, at most 50; descriptor strings cut at 128 characters. Page content is untrusted.
+ * - $renderedFonts: platform font glyph usage across at most 50 visible text-bearing elements, aggregated by family
+ *   and custom status, at most 20 entries. Partial fallback is legitimate for emoji/symbols and is reported here.
+ * - $fontsMeasured: whether font observation completed. Optional measurement is best-effort with a small time cap;
+ *   failed/skipped observation and older sidecars report false, with empty font lists.
  */
 final readonly class PageFacts
 {
     /**
      * @param  list<array{tag: string, role: ?string, text: string, x: int, y: int, width: int, height: int}>  $smallTargets
      * @param  list<array{src: string, natural_width: int, natural_height: int}>  $images
+     * @param  list<array{family: string, weight: string, style: string, status: string}>  $fonts
+     * @param  list<array{family: string, glyph_count: int, custom: bool}>  $renderedFonts
      */
     public function __construct(
         public int $scrollWidth,
@@ -28,5 +35,8 @@ final readonly class PageFacts
         public int $smallTargetsTotal,
         public array $images = [],
         public int $imagesTotal = 0,
+        public array $fonts = [],
+        public array $renderedFonts = [],
+        public bool $fontsMeasured = false,
     ) {}
 }

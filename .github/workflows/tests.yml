@@ -36,7 +36,10 @@ jobs:
       - run: composer types
       - run: vendor/bin/pint --test
   sidecar:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
     needs: third-party
     # Bounded: a test that leaves a handle open would otherwise hold the job (and any release waiting on it) for hours.
     timeout-minutes: 15
@@ -54,6 +57,10 @@ jobs:
       # Page capture is tested in a real Chromium, pinned as the sidecar pins it: install the one the lockfile's
       # Playwright expects, rather than skip the tests that prove nothing undeclared is reachable.
       - run: npx playwright install --with-deps chromium
+        if: runner.os == 'Linux'
+        working-directory: sidecar
+      - run: npx playwright install chromium
+        if: runner.os == 'Windows'
         working-directory: sidecar
       - run: npm test
         working-directory: sidecar

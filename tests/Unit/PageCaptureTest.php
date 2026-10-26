@@ -91,7 +91,7 @@ describe('the request', function () {
         expect((new CaptureRequest([375, 768, 375], clip: true))->toArray())->toBe([
             'widths' => [375, 768], 'full_page' => true, 'clip' => true, 'wait_for_ready_attribute' => false, 'measure' => true,
             'viewport_height' => 900, 'max_height' => 16384, 'max_bytes' => 15 * 1024 * 1024, 'timeout_ms' => 30000,
-            'require_images' => false,
+            'require_images' => false, 'require_fonts' => [],
         ]);
     });
 });
