@@ -61,10 +61,25 @@ test('capture, end to end in a pinned Chromium', async (t) => {
     '/ready': '<html><body>wait<script>setTimeout(() => document.documentElement.setAttribute("data-prism-capture-ready", ""), 300)</script></body></html>',
     '/never-ready': '<html><body>never</body></html>',
     '/leak': `<html><body><img src="http://leak.test:${off.address().port}/pixel.png"><img src="http://127.0.0.1:${off.address().port}/direct.png"></body></html>`,
+    // require_images. CSP `script-src 'none'` on every one: the check must work on a page that runs no script.
+    '/images-ok': '<html><body><img src="/pixel.png" width="10" height="10"><img src="/pixel.png?b" alt="b"></body></html>',
+    '/images-404': '<html><body><img src="/pixel.png"><img src="/missing.png"></body></html>',
+    '/images-corrupt': '<html><body><img src="/corrupt.png"></body></html>',
+    '/images-lazy': '<html><body style="margin:0"><div style="height:20000px">tall</div><img loading="lazy" src="/pixel.png?lazy"></body></html>',
+    '/images-svg': '<html><body><img src="/nosize.svg"></body></html>',
+    '/images-srcset': '<html><body><img src="/pixel.png?1x" srcset="/pixel.png?1x 1x, /pixel.png?2x 2x"></body></html>',
   };
+  // A real 1x1 PNG.
+  const PIXEL = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=', 'base64');
   const server = http.createServer((req, res) => {
     if (req.url === '/redirect') { res.statusCode = 302; res.setHeader('location', `http://leak.test:${off.address().port}/`); return res.end(); }
+    const path = req.url.split('?')[0];
+    if (path === '/pixel.png') { res.setHeader('content-type', 'image/png'); return res.end(PIXEL); }
+    if (path === '/corrupt.png') { res.setHeader('content-type', 'image/png'); return res.end('not a png at all'); }
+    if (path === '/nosize.svg') { res.setHeader('content-type', 'image/svg+xml'); return res.end('<svg xmlns="http://www.w3.org/2000/svg"><rect width="10" height="10"/></svg>'); }
+    if (path === '/missing.png') { res.statusCode = 404; return res.end('missing'); }
     res.setHeader('content-type', 'text/html');
+    if (req.url.startsWith('/images-')) res.setHeader('content-security-policy', "script-src 'none'");
     res.end(pages[req.url] ?? '<html><body>ok</body></html>');
   });
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
@@ -106,6 +121,46 @@ test('capture, end to end in a pinned Chromium', async (t) => {
   await t.test('the page-declared readiness attribute is waited for, within the budget', async () => {
     assert.equal((await run('/ready', { wait_for_ready_attribute: true })).captures.length, 1);
     await assert.rejects(() => run('/never-ready', { wait_for_ready_attribute: true, timeout_ms: 2000 }), code('capture_timeout'));
+  });
+
+  await t.test('require_images: healthy images pass, and the facts name each selected source and size', async () => {
+    const [capture] = (await run('/images-ok', { require_images: true })).captures;
+    assert.equal(capture.facts.images_total, 2);
+    assert.deepEqual(capture.facts.images.map((image) => [new URL(image.src).pathname + new URL(image.src).search, image.natural_width, image.natural_height]),
+      [['/pixel.png', 1, 1], ['/pixel.png?b', 1, 1]]);
+  });
+
+  await t.test('require_images: a 404 or an undecodable image refuses the capture, naming the image', async () => {
+    const failed = (path) => run(path, { require_images: true, timeout_ms: 8000 }).then(() => assert.fail('captured a broken page'), (error) => error);
+    const missing = await failed('/images-404');
+    assert.equal(missing.code, 'capture_images_failed');
+    assert.equal(missing.details.failed_images_total, 1);
+    assert.equal(new URL(missing.details.failed_images[0].src).pathname, '/missing.png');
+    assert.equal(missing.details.failed_images[0].natural_width, 0);
+    const corrupt = await failed('/images-corrupt');
+    assert.equal(corrupt.code, 'capture_images_failed');
+    assert.equal(new URL(corrupt.details.failed_images[0].src).pathname, '/corrupt.png');
+    // Without the option the same broken page is captured, exactly as before.
+    assert.equal((await run('/images-404')).captures.length, 1);
+  });
+
+  await t.test('require_images: a lazy image that never loads is refused as not complete, not waited on forever', async () => {
+    const started = Date.now();
+    const error = await run('/images-lazy', { require_images: true, timeout_ms: 6000 }).then(() => null, (e) => e);
+    assert.ok(Date.now() - started < 9000, 'bounded by the capture budget');
+    assert.equal(error?.code, 'capture_images_failed');
+    assert.equal(error.details.failed_images[0].complete, false);
+  });
+
+  await t.test('require_images: an SVG with no intrinsic size is not mistaken for a broken image', async () => {
+    // Measured in the pinned Chromium: the default object size, 300 x 150, so `natural_width > 0` holds.
+    const [capture] = (await run('/images-svg', { require_images: true })).captures;
+    assert.deepEqual([capture.facts.images[0].natural_width, capture.facts.images[0].natural_height], [300, 150]);
+  });
+
+  await t.test('require_images: srcset selection is reported as the source actually used', async () => {
+    const [capture] = (await run('/images-srcset', { require_images: true })).captures;
+    assert.equal(new URL(capture.facts.images[0].src).search, '?1x');
   });
 
   // The two layers, each on its own: either one alone must hold.

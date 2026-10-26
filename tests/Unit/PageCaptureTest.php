@@ -91,6 +91,7 @@ describe('the request', function () {
         expect((new CaptureRequest([375, 768, 375], clip: true))->toArray())->toBe([
             'widths' => [375, 768], 'full_page' => true, 'clip' => true, 'wait_for_ready_attribute' => false, 'measure' => true,
             'viewport_height' => 900, 'max_height' => 16384, 'max_bytes' => 15 * 1024 * 1024, 'timeout_ms' => 30000,
+            'require_images' => false,
         ]);
     });
 });
@@ -151,5 +152,71 @@ describe('capturing', function () {
         $http = new Factory;
         $http->fake(['*' => $http->response(['captures' => [captureEntry(375, 375, 900)]])]);
         expect(refusedCode(fn () => pageCapture($http)->capture('https://flabs.gen/', new CaptureRequest([375], maxBytes: 1024))))->toBe('capture_too_large');
+    });
+});
+
+describe('require images', function () {
+    it('asks the sidecar for it, and is off by default', function () {
+        expect((new CaptureRequest([375]))->toArray()['require_images'])->toBeFalse()
+            ->and((new CaptureRequest([375], requireImages: true))->toArray()['require_images'])->toBeTrue();
+    });
+
+    it('refuses with capture_images_failed and names the failed images in context()', function () {
+        $http = new Factory;
+        $http->fake(['*' => $http->response([
+            'error' => 'capture_images_failed',
+            'failed_images' => [['src' => 'https://flabs.gen/missing.png', 'natural_width' => 0, 'natural_height' => 0, 'complete' => true, 'decoded' => false]],
+            'failed_images_total' => 1,
+        ], 422)]);
+
+        try {
+            pageCapture($http)->capture('https://flabs.gen/', new CaptureRequest([375], requireImages: true));
+            $this->fail('a page with a broken image was captured');
+        } catch (BrowserRefused $refused) {
+            expect($refused->code())->toBe('capture_images_failed')
+                ->and($refused->context())->toBe([
+                    'failed_images' => [['src' => 'https://flabs.gen/missing.png', 'natural_width' => 0, 'natural_height' => 0, 'complete' => true, 'decoded' => false]],
+                    'failed_images_total' => 1,
+                ]);
+        }
+    });
+
+    it('drops malformed failure detail but keeps the refusal', function () {
+        $http = new Factory;
+        $http->fake(['*' => $http->response(['error' => 'capture_images_failed', 'failed_images' => [['src' => 42]], 'failed_images_total' => 1], 422)]);
+
+        try {
+            pageCapture($http)->capture('https://flabs.gen/', new CaptureRequest([375], requireImages: true));
+            $this->fail('captured');
+        } catch (BrowserRefused $refused) {
+            expect($refused->code())->toBe('capture_images_failed')->and($refused->context())->toBe([]);
+        }
+    });
+
+    it('reports each image the sidecar measured, and refuses facts that do not check out', function () {
+        $images = [['src' => 'https://flabs.gen/hero.png?2x', 'natural_width' => 1600, 'natural_height' => 900]];
+        $http = new Factory;
+        $http->fake(['*' => $http->response(['captures' => [captureEntry(375, 375, 900, ['facts' => [
+            'scroll_width' => 375, 'horizontal_overflow' => false, 'small_targets' => [], 'small_targets_total' => 0,
+            'images' => $images, 'images_total' => 1,
+        ]])]])]);
+        $facts = pageCapture($http)->capture('https://flabs.gen/', new CaptureRequest([375]))[0]->facts;
+
+        expect($facts?->images)->toBe($images)->and($facts?->imagesTotal)->toBe(1);
+
+        $bad = new Factory;
+        $bad->fake(['*' => $bad->response(['captures' => [captureEntry(375, 375, 900, ['facts' => [
+            'scroll_width' => 375, 'horizontal_overflow' => false, 'small_targets' => [], 'small_targets_total' => 0,
+            'images' => [['src' => str_repeat('a', 3000), 'natural_width' => 1, 'natural_height' => 1]], 'images_total' => 1,
+        ]])]])]);
+        expect(refusedCode(fn () => pageCapture($bad)->capture('https://flabs.gen/', new CaptureRequest([375]))))->toBe('malformed_sidecar_response');
+    });
+
+    it('reads facts from a sidecar that reports no images as none', function () {
+        $http = new Factory;
+        $http->fake(['*' => $http->response(['captures' => [captureEntry(375, 375, 900)]])]);
+        $facts = pageCapture($http)->capture('https://flabs.gen/', new CaptureRequest([375]))[0]->facts;
+
+        expect($facts?->images)->toBe([])->and($facts?->imagesTotal)->toBe(0);
     });
 });

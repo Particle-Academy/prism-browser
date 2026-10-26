@@ -53,7 +53,8 @@ final readonly class PageCapture
         }
         if (! $response->successful()) {
             $reason = $response->json('error');
-            throw new BrowserRefused(is_string($reason) && preg_match('/\A[a-z_]{1,64}\z/', $reason) === 1 ? $reason : 'sidecar_failed', 'The browser sidecar refused or failed the capture.');
+            $failedImages = $reason === 'capture_images_failed' ? self::failedImages($response->json()) : [];
+            throw new BrowserRefused(is_string($reason) && preg_match('/\A[a-z_]{1,64}\z/', $reason) === 1 ? $reason : 'sidecar_failed', 'The browser sidecar refused or failed the capture.', $failedImages);
         }
         $captures = $response->json('captures');
         if (! is_array($captures) || ! array_is_list($captures) || count($captures) !== count($request->widths)) {
@@ -139,7 +140,67 @@ final readonly class PageCapture
             ];
         }
 
-        return new PageFacts($facts['scroll_width'], $facts['horizontal_overflow'], $targets, $facts['small_targets_total']);
+        $images = self::images($facts['images'] ?? null);
+        $imagesTotal = $facts['images_total'] ?? count($images);
+        if (! is_int($imagesTotal) || $imagesTotal < count($images)) {
+            self::malformed();
+        }
+
+        return new PageFacts($facts['scroll_width'], $facts['horizontal_overflow'], $targets, $facts['small_targets_total'], $images, $imagesTotal);
+    }
+
+    /**
+     * `capture_images_failed` detail, validated like any other sidecar output: the images that did not load or
+     * decode. Malformed detail is dropped rather than trusted; the refusal itself still stands.
+     *
+     * @return array{failed_images?: list<array{src: string, natural_width: int, natural_height: int, complete: bool, decoded: bool}>, failed_images_total?: int}
+     */
+    private static function failedImages(mixed $body): array
+    {
+        if (! is_array($body) || ! is_array($body['failed_images'] ?? null) || ! array_is_list($body['failed_images'])
+            || count($body['failed_images']) > 100 || ! is_int($body['failed_images_total'] ?? null)) {
+            return [];
+        }
+        $images = [];
+        foreach ($body['failed_images'] as $image) {
+            if (! is_array($image) || ! is_string($image['src'] ?? null) || strlen($image['src']) > 2048
+                || ! is_int($image['natural_width'] ?? null) || ! is_int($image['natural_height'] ?? null)
+                || ! is_bool($image['complete'] ?? null) || ! is_bool($image['decoded'] ?? null)) {
+                return [];
+            }
+            $images[] = [
+                'src' => $image['src'], 'natural_width' => $image['natural_width'], 'natural_height' => $image['natural_height'],
+                'complete' => $image['complete'], 'decoded' => $image['decoded'],
+            ];
+        }
+
+        return ['failed_images' => $images, 'failed_images_total' => $body['failed_images_total']];
+    }
+
+    /**
+     * Each image the sidecar measured; none from a sidecar that measured none.
+     *
+     * @return list<array{src: string, natural_width: int, natural_height: int}>
+     */
+    private static function images(mixed $images): array
+    {
+        if ($images === null) {
+            return [];
+        }
+        if (! is_array($images) || ! array_is_list($images) || count($images) > 100) {
+            self::malformed();
+        }
+        $out = [];
+        foreach ($images as $image) {
+            if (! is_array($image) || ! is_string($image['src'] ?? null) || strlen($image['src']) > 2048
+                || ! is_int($image['natural_width'] ?? null) || $image['natural_width'] < 0
+                || ! is_int($image['natural_height'] ?? null) || $image['natural_height'] < 0) {
+                self::malformed();
+            }
+            $out[] = ['src' => $image['src'], 'natural_width' => $image['natural_width'], 'natural_height' => $image['natural_height']];
+        }
+
+        return $out;
     }
 
     private static function malformed(): never
