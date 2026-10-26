@@ -120,7 +120,8 @@ http.createServer(async (req, res) => {
     res.end(JSON.stringify(result));
   } catch (error) {
     res.statusCode=422;
-    res.end(JSON.stringify({error:error?.code ?? 'engine_failed'}));
+    // A refusal's own snake_case details travel with its code; anything else is just the code.
+    res.end(JSON.stringify({error:error?.code ?? 'engine_failed', ...(error?.code && error?.details ? error.details : {})}));
   }
 }).listen(port, host, () => process.stdout.write(`prism-browser sidecar listening on http://${host}:${port}\n`));
 

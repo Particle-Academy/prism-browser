@@ -42,9 +42,23 @@ use RuntimeException;
  */
 final class BrowserRefused extends RuntimeException
 {
-    public function __construct(private readonly string $errorCode, string $message)
+    /**
+     * @param  array<string, mixed>  $context  machine-readable detail for this code, e.g. `failed_images` for
+     *                                         `capture_images_failed`; empty for most refusals
+     */
+    public function __construct(private readonly string $errorCode, string $message, private readonly array $context = [])
     {
         parent::__construct($message);
+    }
+
+    /**
+     * Machine-readable detail for this refusal, keyed in snake_case. Empty unless the code documents some.
+     *
+     * @return array<string, mixed>
+     */
+    public function context(): array
+    {
+        return $this->context;
     }
 
     /**

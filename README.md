@@ -43,6 +43,7 @@ foreach ($pages as $page) {
     $page->capturedWidth;     // wider than $page->width when the page overflows
     $page->facts?->horizontalOverflow;
     $page->facts?->smallTargets;   // interactive elements under 44 px, at most 50
+    $page->facts?->images;         // each <img>: the source used (srcset variant) and its size
 }
 ```
 
@@ -61,12 +62,20 @@ capture only, refusing agent operations with `egress_proxy_required`.
 `document.fonts.ready`; optionally `waitForReadyAttribute`, which also waits
 for the page itself to set `data-prism-capture-ready` on `<html>`.
 
+**Broken images refuse the capture, when asked.** All of the above is satisfied
+by a page whose image 404s or will not decode. `requireImages: true` waits for
+every `<img>` to load AND decode with a non-zero width, and otherwise refuses
+with `capture_images_failed`; `$refused->context()['failed_images']` lists each
+failed image's `src`, natural size, and whether it completed and decoded. A lazy
+image that never loads counts as failed, so render captures with eager images.
+It needs no page script, so it works on a page served with `script-src 'none'`.
+
 **Bounded, never silently cut.** Widths 240 to 3840 (at most 8), a maximum
 height, bytes per image and a time budget. A page taller than `maxHeight` is
 refused (`capture_too_large`) unless `clip: true`, and then the result says
 `clipped`. A full page is captured at its real width, so overflow shows.
 Refusal codes: `capture_origin_not_declared`, `invalid_capture_options`,
-`capture_too_large`, `capture_timeout`, `capture_failed`,
+`capture_too_large`, `capture_timeout`, `capture_failed`, `capture_images_failed`,
 `capture_unavailable`, `invalid_capture_origin`, `capture_origin_private`,
 `capture_origin_unresolved`.
 

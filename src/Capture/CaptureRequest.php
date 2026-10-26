@@ -17,7 +17,13 @@ use Prism\Browser\Exceptions\BrowserRefused;
  *   (`capture_too_large`, the default).
  * - waitForReadyAttribute: also wait until the PAGE sets `data-prism-capture-ready` on <html>. Always waited for:
  *   the load event, network idle and document.fonts.ready. None of it is supplied by the caller.
- * - measure: return the facts the sidecar measures at each width (horizontal overflow, small interactive targets).
+ * - measure: return the facts the sidecar measures at each width (horizontal overflow, small interactive targets,
+ *   and each image's selected source and intrinsic size).
+ * - requireImages: before capturing, every <img> must have loaded AND decoded, with a non-zero intrinsic width;
+ *   otherwise the capture is refused (`capture_images_failed`) and BrowserRefused::context() names the failed
+ *   images. load, network idle, fonts and a ready marker are all satisfied by a page whose image 404s, so without
+ *   this a broken page is captured as if it were the real one. A lazy image that never loads counts as failed:
+ *   render captures with eager images. Works on a page that allows no script.
  */
 final readonly class CaptureRequest
 {
@@ -41,6 +47,7 @@ final readonly class CaptureRequest
         public int $maxHeight = 16384,
         public int $maxBytes = 15 * 1024 * 1024,
         public int $timeoutSeconds = 30,
+        public bool $requireImages = false,
     ) {
         $widths = array_values(array_unique($widths));
         if ($widths === [] || count($widths) > 8) {
@@ -71,6 +78,7 @@ final readonly class CaptureRequest
             'max_height' => $this->maxHeight,
             'max_bytes' => $this->maxBytes,
             'timeout_ms' => $this->timeoutSeconds * 1000,
+            'require_images' => $this->requireImages,
         ];
     }
 

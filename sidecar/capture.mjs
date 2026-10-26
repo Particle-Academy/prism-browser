@@ -35,9 +35,13 @@ export const LIMITS = {
   maxBytes: 25 * 1024 * 1024,
   maxTimeoutMs: 120000,
   maxSmallTargets: 50,
+  maxImages: 100,
+  maxImageSrc: 2048,
+  imageDecodeMs: 5000,
 };
 
-const refuse = (code) => Object.assign(new Error(code), { code });
+/** A refusal: a stable code, and optionally snake_case details the caller may read (e.g. `failed_images`). */
+const refuse = (code, details = undefined) => Object.assign(new Error(code), { code, ...(details === undefined ? {} : { details }) });
 
 /** A loopback address: 127/8 or ::1, in any spelling Node returns. */
 export function isLoopback(address) {
@@ -139,6 +143,7 @@ export function readCaptureRequest(body) {
     fullPage: flag(body.full_page, true),
     clip: flag(body.clip, false),
     waitForReadyAttribute: flag(body.wait_for_ready_attribute, false),
+    requireImages: flag(body.require_images, false),
     measure: flag(body.measure, true),
     viewportHeight: integer(body.viewport_height, LIMITS.viewportHeight, 200, 4320),
     maxHeight: integer(body.max_height, 16384, 200, LIMITS.maxHeight),
@@ -147,8 +152,58 @@ export function readCaptureRequest(body) {
   };
 }
 
+/**
+ * `require_images`: every <img> has loaded AND decoded, or the capture is refused with `capture_images_failed`
+ * naming the images that did not. `load`, network idle, fonts and a static ready marker are all satisfied by a page
+ * whose image 404s or fails to decode, so without this a broken page is captured as if it were the real one.
+ *
+ * Waits until every image has SETTLED (loaded or failed). An image that never settles -- a lazy image out of view --
+ * is reported as not complete rather than waited on until the budget runs out. Each loaded image is then decoded,
+ * bounded by LIMITS.imageDecodeMs. Read through the DevTools protocol, so it works on a page that allows no script.
+ */
+async function requireImages(page, remaining) {
+  try {
+    await page.waitForFunction(() => [...document.images].every((img) => img.complete), null, {
+      timeout: Math.max(1, remaining() - 2000),
+    });
+  } catch (error) {
+    if (error?.name !== 'TimeoutError') throw error;
+  }
+  const images = await page.evaluate(checkImages, { decodeMs: Math.min(LIMITS.imageDecodeMs, remaining()), maxSrc: LIMITS.maxImageSrc });
+  const failed = images.filter((image) => !image.complete || !image.decoded || image.natural_width === 0);
+  if (failed.length > 0) {
+    throw refuse('capture_images_failed', {
+      failed_images: failed.slice(0, LIMITS.maxImages).map(({ src, natural_width, natural_height, complete, decoded }) => (
+        { src, natural_width, natural_height, complete, decoded })),
+      failed_images_total: failed.length,
+    });
+  }
+}
+
+/** Runs in the page: each <img>'s state, decoding the loaded ones (bounded). */
+async function checkImages({ decodeMs, maxSrc }) {
+  return Promise.all([...document.images].map(async (img) => {
+    let decoded = false;
+    if (img.complete && img.naturalWidth > 0) {
+      try {
+        await Promise.race([img.decode(), new Promise((_, reject) => setTimeout(() => reject(new Error('decode timeout')), decodeMs))]);
+        decoded = true;
+      } catch {
+        decoded = false;
+      }
+    }
+    return {
+      src: (img.currentSrc || img.getAttribute('src') || '').slice(0, maxSrc),
+      natural_width: img.naturalWidth,
+      natural_height: img.naturalHeight,
+      complete: img.complete,
+      decoded,
+    };
+  }));
+}
+
 /** The page's own facts, measured by this script: never one a caller supplies. */
-function measurePage(maxSmallTargets) {
+function measurePage({ maxSmallTargets, maxImages, maxImageSrc }) {
   const doc = document.documentElement;
   const body = document.body;
   const selector = 'a[href],button,input:not([type=hidden]),select,textarea,summary,[role=button],[role=link],[role=checkbox],[role=tab],[role=menuitem],[tabindex]:not([tabindex="-1"])';
@@ -170,7 +225,15 @@ function measurePage(maxSmallTargets) {
       width: Math.round(rect.width), height: Math.round(rect.height),
     });
   }
+  // Each image's selected source and intrinsic size: what a host checks to know which srcset variant it got.
+  const images = [...document.images];
   return {
+    images: images.slice(0, maxImages).map((img) => ({
+      src: (img.currentSrc || img.getAttribute('src') || '').slice(0, maxImageSrc),
+      natural_width: img.naturalWidth,
+      natural_height: img.naturalHeight,
+    })),
+    imagesTotal: images.length,
     viewportWidth: window.innerWidth,
     scrollWidth: Math.max(doc.scrollWidth, body ? body.scrollWidth : 0),
     scrollHeight: Math.max(doc.scrollHeight, body ? body.scrollHeight : 0),
@@ -181,7 +244,8 @@ function measurePage(maxSmallTargets) {
 
 /**
  * Capture `request.url` at each width, in `browser` (the pinned capture browser). Refusals are codes:
- * `capture_origin_not_declared`, `capture_timeout`, `capture_too_large`, `capture_failed`.
+ * `capture_origin_not_declared`, `capture_timeout`, `capture_too_large`, `capture_failed`, and with `require_images`
+ * `capture_images_failed` (details: `failed_images`, `failed_images_total`).
  */
 export async function capture(browser, origins, request) {
   if (!isDeclared(request.url, origins)) throw refuse('capture_origin_not_declared');
@@ -209,13 +273,14 @@ export async function capture(browser, origins, request) {
         if (request.waitForReadyAttribute) {
           await page.waitForFunction((name) => document.documentElement.hasAttribute(name), READY_ATTRIBUTE, { timeout: remaining() });
         }
+        if (request.requireImages) await requireImages(page, remaining);
       } catch (error) {
         if (error?.code) throw error;
         throw refuse(error?.name === 'TimeoutError' ? 'capture_timeout' : 'capture_failed');
       }
       // A redirect off the declared origins is refused, not followed into a screenshot.
       if (!isDeclared(page.url(), origins)) throw refuse('capture_origin_not_declared');
-      const facts = await page.evaluate(measurePage, LIMITS.maxSmallTargets);
+      const facts = await page.evaluate(measurePage, { maxSmallTargets: LIMITS.maxSmallTargets, maxImages: LIMITS.maxImages, maxImageSrc: LIMITS.maxImageSrc });
       const pageHeight = Math.max(facts.scrollHeight, request.viewportHeight);
       let clipped = false;
       let height = request.fullPage ? pageHeight : request.viewportHeight;
@@ -253,6 +318,8 @@ export async function capture(browser, origins, request) {
             horizontal_overflow: facts.scrollWidth > facts.viewportWidth,
             small_targets: facts.smallTargets,
             small_targets_total: facts.smallTargetsTotal,
+            images: facts.images,
+            images_total: facts.imagesTotal,
           },
         } : {}),
       });
