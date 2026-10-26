@@ -17,6 +17,8 @@ namespace Prism\Browser\Capture;
  * - $fonts: declared FontFaces, at most 50; descriptor strings cut at 128 characters. Page content is untrusted.
  * - $renderedFonts: platform font glyph usage across at most 50 visible text-bearing elements, aggregated by family
  *   and custom status, at most 20 entries. Partial fallback is legitimate for emoji/symbols and is reported here.
+ * - $fontsMeasured: whether font observation completed. Optional measurement is best-effort with a small time cap;
+ *   failed/skipped observation and older sidecars report false, with empty font lists.
  */
 final readonly class PageFacts
 {
@@ -35,5 +37,6 @@ final readonly class PageFacts
         public int $imagesTotal = 0,
         public array $fonts = [],
         public array $renderedFonts = [],
+        public bool $fontsMeasured = false,
     ) {}
 }

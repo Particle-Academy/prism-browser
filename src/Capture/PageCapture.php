@@ -150,9 +150,14 @@ final readonly class PageCapture
             self::malformed();
         }
 
+        $fontsMeasured = array_key_exists('fonts_measured', $facts) ? $facts['fonts_measured'] : false;
+        if (! is_bool($fontsMeasured)) {
+            self::malformed();
+        }
+
         return new PageFacts($facts['scroll_width'], $facts['horizontal_overflow'], $targets, $facts['small_targets_total'], $images, $imagesTotal,
             self::fonts(array_key_exists('fonts', $facts) ? $facts['fonts'] : []),
-            self::renderedFonts(array_key_exists('rendered_fonts', $facts) ? $facts['rendered_fonts'] : []));
+            self::renderedFonts(array_key_exists('rendered_fonts', $facts) ? $facts['rendered_fonts'] : []), $fontsMeasured);
     }
 
     /** @return array{failed_fonts?: list<array{family: string, weight: int, style: string, status: string}>, failed_fonts_total?: int} */

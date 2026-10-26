@@ -128,5 +128,5 @@ export async function inspectFonts(context, page, required, remaining) {
   }
   const failed = required.filter((_, i) => usage[i].total > 0 && usage[i].custom === 0).map((face) => ({ ...face, status: 'fallback_rendered' }));
   if (failed.length) throw refusal('capture_fonts_failed', { failed_fonts: failed, failed_fonts_total: failed.length });
-  return { fonts: result.fonts, rendered_fonts: [...rendered.values()] };
+  return { fonts: result.fonts, rendered_fonts: [...rendered.values()], fonts_measured: true };
 }

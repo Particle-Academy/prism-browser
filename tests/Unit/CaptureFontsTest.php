@@ -92,10 +92,12 @@ function fontFactsResponse(array $extra): Factory
 it('reads bounded font facts and defaults missing old-sidecar fields to empty lists', function () {
     $fonts = [['family' => 'Inter', 'weight' => '100 900', 'style' => 'normal', 'status' => 'loaded']];
     $rendered = [['family' => 'Inter', 'glyph_count' => 4, 'custom' => true], ['family' => 'Emoji', 'glyph_count' => 1, 'custom' => false]];
-    $facts = fontCapture(fontFactsResponse(['fonts' => $fonts, 'rendered_fonts' => $rendered]))->capture('https://flabs.gen/', new CaptureRequest([375]))[0]->facts;
-    expect($facts?->fonts)->toBe($fonts)->and($facts?->renderedFonts)->toBe($rendered);
+    $facts = fontCapture(fontFactsResponse(['fonts' => $fonts, 'rendered_fonts' => $rendered, 'fonts_measured' => true]))->capture('https://flabs.gen/', new CaptureRequest([375]))[0]->facts;
+    expect($facts?->fonts)->toBe($fonts)->and($facts?->renderedFonts)->toBe($rendered)->and($facts?->fontsMeasured)->toBeTrue();
     $old = fontCapture(fontFactsResponse([]))->capture('https://flabs.gen/', new CaptureRequest([375]))[0]->facts;
-    expect($old?->fonts)->toBe([])->and($old?->renderedFonts)->toBe([]);
+    expect($old?->fonts)->toBe([])->and($old?->renderedFonts)->toBe([])->and($old?->fontsMeasured)->toBeFalse();
+    $unmeasured = fontCapture(fontFactsResponse(['fonts' => [], 'rendered_fonts' => [], 'fonts_measured' => false]))->capture('https://flabs.gen/', new CaptureRequest([375]))[0]->facts;
+    expect($unmeasured?->fontsMeasured)->toBeFalse();
 });
 
 it('refuses malformed font facts', function (array $extra) {
@@ -111,4 +113,5 @@ it('refuses malformed font facts', function (array $extra) {
     [['rendered_fonts' => [['family' => 'a', 'glyph_count' => '1', 'custom' => true]]]],
     [['rendered_fonts' => [['family' => 'a', 'glyph_count' => 1, 'custom' => 1]]]],
     [['rendered_fonts' => array_fill(0, 21, ['family' => 'a', 'glyph_count' => 1, 'custom' => true])]],
+    [['fonts_measured' => null]], [['fonts_measured' => 0]], [['fonts_measured' => 'true']],
 ]);

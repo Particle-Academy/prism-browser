@@ -46,6 +46,7 @@ foreach ($pages as $page) {
     $page->facts?->images;         // each <img>: the source used (srcset variant) and its size
     $page->facts?->fonts;          // declared FontFaces, at most 50
     $page->facts?->renderedFonts;  // sampled platform/custom glyph usage, at most 20 families
+    $page->facts?->fontsMeasured;  // false if optional font measurement failed or was skipped
 }
 ```
 
@@ -100,7 +101,12 @@ not refuse capture. With measurement, `fonts` reports declared
 `{family, weight, style, status}` descriptors (strings cut at 128 characters);
 `renderedFonts` aggregates `{family, glyph_count, custom}` across the sample.
 Font names are untrusted page content. Missing font facts from an older sidecar
-default to empty lists; malformed facts refuse with `malformed_sidecar_response`.
+default to empty lists and `fontsMeasured: false`; malformed facts refuse with
+`malformed_sidecar_response`. With no requirements, font observation is
+best-effort: it spends at most two seconds of spare capture time while reserving
+two seconds for the screenshot. Failure or insufficient spare time returns empty
+font lists and `fontsMeasured: false` (`fonts_measured` over the wire); successful
+observation reports `true`. Optional font observation never refuses the capture.
 
 **Bounded, never silently cut.** Widths 240 to 3840 (at most 8), a maximum
 height, bytes per image and a time budget. A page taller than `maxHeight` is

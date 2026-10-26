@@ -47,9 +47,10 @@ test('font loading and actual glyph rendering under script-src none in pinned Ch
   t.after(async () => { await browser?.close(); server.close(); });
   browser = await chromium.launch({ headless: true, args: [`--host-resolver-rules=${resolverRules(new Map([['capture.test', '127.0.0.1']]))}`] });
   const origin = `http://capture.test:${server.address().port}`;
-  const run = (path, extra = {}) => capture(browser, [origin], readCaptureRequest({ url: origin + path, widths: [375], require_fonts: [face], timeout_ms: 10000, ...extra }));
+  const run = (path, extra = {}, engine = browser) => capture(engine, [origin], readCaptureRequest({ url: origin + path, widths: [375], require_fonts: [face], timeout_ms: 10000, ...extra }));
   await t.test('a same-origin self-hosted face loads and supplies custom glyphs', async () => {
     const facts = (await run('/ok')).captures[0].facts;
+    assert.equal(facts.fonts_measured, true);
     assert.ok(facts.fonts.some((f) => f.family.replaceAll('"', '') === face.family && f.status === 'loaded'));
     assert.ok(facts.rendered_fonts.some((f) => f.custom && f.glyph_count > 0));
     assert.equal((await run('/ok', { require_fonts: [{ ...face, family: '"cApTuRe TeSt"', weight: 500 }], measure: false })).captures[0].facts, undefined);
@@ -95,6 +96,36 @@ test('font loading and actual glyph rendering under script-src none in pinned Ch
   });
   await t.test('the default still captures missing and wholly fallback fonts', async () => {
     for (const path of ['/404', '/missing', '/fallback']) assert.equal((await run(path, { require_fonts: [] })).captures.length, 1);
+  });
+  await t.test('optional measurement failure cannot refuse a capture; required inspection still refuses', async () => {
+    const engine = { newContext: async (options) => {
+      const context = await browser.newContext(options);
+      context.newCDPSession = async () => { throw new Error('injected CDP failure'); };
+      return context;
+    } };
+    const result = (await run('/ok', { require_fonts: [] }, engine)).captures[0];
+    assert.deepEqual([result.facts.fonts, result.facts.rendered_fonts, result.facts.fonts_measured], [[], [], false]);
+    assert.ok(Buffer.from(result.png, 'base64').length > 0);
+    await assert.rejects(() => run('/ok', {}, engine), (e) => e.code === 'capture_failed');
+  });
+  await t.test('optional measurement timeout preserves screenshot budget and returns unmeasured facts', async () => {
+    let screenshotBudget;
+    const engine = { newContext: async (options) => {
+      const context = await browser.newContext(options);
+      context.newCDPSession = () => new Promise(() => {});
+      const newPage = context.newPage.bind(context);
+      context.newPage = async () => {
+        const page = await newPage(), screenshot = page.screenshot.bind(page);
+        page.screenshot = (options) => { screenshotBudget = options.timeout; return screenshot(options); };
+        return page;
+      };
+      return context;
+    } };
+    const result = (await run('/ok', { require_fonts: [], timeout_ms: 6000 }, engine)).captures[0];
+    assert.deepEqual([result.facts.fonts, result.facts.rendered_fonts, result.facts.fonts_measured], [[], [], false]);
+    assert.ok(screenshotBudget >= 1500, `screenshot received ${screenshotBudget}ms`);
+    const short = (await run('/ok', { require_fonts: [], timeout_ms: 2000 })).captures[0];
+    assert.equal(short.facts.fonts_measured, false);
   });
 });
 

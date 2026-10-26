@@ -268,7 +268,7 @@ export async function capture(browser, origins, request) {
     try {
       await context.route('**/*', (route) => (isDeclared(route.request().url(), origins) ? route.continue() : route.abort('blockedbyclient')));
       const page = await context.newPage();
-      let fontFacts = { fonts: [], rendered_fonts: [] };
+      let fontFacts = { fonts: [], rendered_fonts: [], fonts_measured: false };
       try {
         await page.goto(request.url, { waitUntil: 'load', timeout: remaining() });
         await page.waitForLoadState('networkidle', { timeout: remaining() });
@@ -277,7 +277,23 @@ export async function capture(browser, origins, request) {
           await page.waitForFunction((name) => document.documentElement.hasAttribute(name), READY_ATTRIBUTE, { timeout: remaining() });
         }
         if (request.requireImages) await requireImages(page, remaining);
-        if (request.measure || request.requireFonts.length) fontFacts = await inspectFonts(context, page, request.requireFonts, remaining);
+        if (request.requireFonts.length) {
+          fontFacts = await inspectFonts(context, page, request.requireFonts, remaining);
+        } else if (request.measure) {
+          // Optional facts cannot turn a previously successful capture into a refusal. Spend only spare time,
+          // capped at two seconds, preserving at least two seconds of the shared budget for the screenshot.
+          const spare = Math.min(2000, remaining() - 2000);
+          if (spare > 0) {
+            const fontDeadline = Date.now() + spare;
+            const fontRemaining = () => {
+              const left = fontDeadline - Date.now();
+              if (left <= 0) throw refuse('capture_timeout');
+              return left;
+            };
+            try { fontFacts = await inspectFonts(context, page, [], fontRemaining); }
+            catch { /* Best-effort facts remain explicitly unmeasured; required-font inspection above is strict. */ }
+          }
+        }
       } catch (error) {
         if (error?.code) throw error;
         throw refuse(error?.name === 'TimeoutError' ? 'capture_timeout' : 'capture_failed');
