@@ -44,6 +44,8 @@ foreach ($pages as $page) {
     $page->facts?->horizontalOverflow;
     $page->facts?->smallTargets;   // interactive elements under 44 px, at most 50
     $page->facts?->images;         // each <img>: the source used (srcset variant) and its size
+    $page->facts?->fonts;          // declared FontFaces, at most 50
+    $page->facts?->renderedFonts;  // sampled platform/custom glyph usage, at most 20 families
 }
 ```
 
@@ -70,12 +72,42 @@ failed image's `src`, natural size, and whether it completed and decoded. A lazy
 image that never loads counts as failed, so render captures with eager images.
 It needs no page script, so it works on a page served with `script-src 'none'`.
 
+**Required fonts must load and render.** Opt in with the last, default-empty option:
+
+```php
+new CaptureRequest([375, 1280], requireFonts: [
+    ['family' => 'Inter', 'weight' => 400, 'style' => 'normal'],
+]);
+```
+
+At most 16 faces: a nonempty family of at most 128 characters, integer weight
+1–1000, and style `normal`, `italic` or `oblique`. The sidecar body calls this
+`require_fonts`. After readiness, within the same capture budget, each face must
+match a declared FontFace and load. Family matching ignores case and outer
+quotes; a weight range may cover the requested weight. A bounded DevTools sample
+of up to 50 visible text-bearing elements (from the first 5000 text nodes) checks
+actual glyph usage. For sampled text whose first computed family matches a
+required family, zero custom font glyphs refuses the capture.
+**Partial fallback is allowed**: emoji, symbols and unicode-range subsets may
+use platform fonts alongside the loaded face. An unused face is checked for
+loading; the sample does not prove coverage of every glyph on the page.
+
+Failures use `capture_fonts_failed` with `context()['failed_fonts']`, at most 16
+`{family, weight, style, status}` entries, and `failed_fonts_total`. Status is
+`missing`, `unloaded`, `error` or `fallback_rendered`. This guard works with
+`measure: false` and `script-src 'none'`. Without `requireFonts`, fallback does
+not refuse capture. With measurement, `fonts` reports declared
+`{family, weight, style, status}` descriptors (strings cut at 128 characters);
+`renderedFonts` aggregates `{family, glyph_count, custom}` across the sample.
+Font names are untrusted page content. Missing font facts from an older sidecar
+default to empty lists; malformed facts refuse with `malformed_sidecar_response`.
+
 **Bounded, never silently cut.** Widths 240 to 3840 (at most 8), a maximum
 height, bytes per image and a time budget. A page taller than `maxHeight` is
 refused (`capture_too_large`) unless `clip: true`, and then the result says
 `clipped`. A full page is captured at its real width, so overflow shows.
 Refusal codes: `capture_origin_not_declared`, `invalid_capture_options`,
-`capture_too_large`, `capture_timeout`, `capture_failed`, `capture_images_failed`,
+`capture_too_large`, `capture_timeout`, `capture_failed`, `capture_images_failed`, `capture_fonts_failed`,
 `capture_unavailable`, `invalid_capture_origin`, `capture_origin_private`,
 `capture_origin_unresolved`.
 

@@ -53,8 +53,12 @@ final readonly class PageCapture
         }
         if (! $response->successful()) {
             $reason = $response->json('error');
-            $failedImages = $reason === 'capture_images_failed' ? self::failedImages($response->json()) : [];
-            throw new BrowserRefused(is_string($reason) && preg_match('/\A[a-z_]{1,64}\z/', $reason) === 1 ? $reason : 'sidecar_failed', 'The browser sidecar refused or failed the capture.', $failedImages);
+            $details = match ($reason) {
+                'capture_images_failed' => self::failedImages($response->json()),
+                'capture_fonts_failed' => self::failedFonts($response->json()),
+                default => [],
+            };
+            throw new BrowserRefused(is_string($reason) && preg_match('/\A[a-z_]{1,64}\z/', $reason) === 1 ? $reason : 'sidecar_failed', 'The browser sidecar refused or failed the capture.', $details);
         }
         $captures = $response->json('captures');
         if (! is_array($captures) || ! array_is_list($captures) || count($captures) !== count($request->widths)) {
@@ -146,7 +150,76 @@ final readonly class PageCapture
             self::malformed();
         }
 
-        return new PageFacts($facts['scroll_width'], $facts['horizontal_overflow'], $targets, $facts['small_targets_total'], $images, $imagesTotal);
+        return new PageFacts($facts['scroll_width'], $facts['horizontal_overflow'], $targets, $facts['small_targets_total'], $images, $imagesTotal,
+            self::fonts(array_key_exists('fonts', $facts) ? $facts['fonts'] : []),
+            self::renderedFonts(array_key_exists('rendered_fonts', $facts) ? $facts['rendered_fonts'] : []));
+    }
+
+    /** @return array{failed_fonts?: list<array{family: string, weight: int, style: string, status: string}>, failed_fonts_total?: int} */
+    private static function failedFonts(mixed $body): array
+    {
+        if (! is_array($body) || ! is_array($body['failed_fonts'] ?? null) || ! array_is_list($body['failed_fonts'])
+            || count($body['failed_fonts']) < 1 || count($body['failed_fonts']) > 16 || ! is_int($body['failed_fonts_total'] ?? null)
+            || $body['failed_fonts_total'] < count($body['failed_fonts']) || $body['failed_fonts_total'] > 16) {
+            return [];
+        }
+        $out = [];
+        foreach ($body['failed_fonts'] as $face) {
+            if (! is_array($face) || ! is_string($face['family'] ?? null) || trim($face['family'], " \t\n\r\v\f") === ''
+                || ! mb_check_encoding($face['family'], 'UTF-8') || mb_strlen($face['family'], 'UTF-8') > 128
+                || ! is_int($face['weight'] ?? null) || $face['weight'] < 1 || $face['weight'] > 1000
+                || ! in_array($face['style'] ?? null, ['normal', 'italic', 'oblique'], true)
+                || ! in_array($face['status'] ?? null, ['missing', 'unloaded', 'error', 'fallback_rendered'], true)) {
+                return [];
+            }
+            $out[] = ['family' => $face['family'], 'weight' => $face['weight'], 'style' => $face['style'], 'status' => $face['status']];
+        }
+
+        return ['failed_fonts' => $out, 'failed_fonts_total' => $body['failed_fonts_total']];
+    }
+
+    /** @return list<array{family: string, weight: string, style: string, status: string}> */
+    private static function fonts(mixed $fonts): array
+    {
+        if (! is_array($fonts) || ! array_is_list($fonts) || count($fonts) > 50) {
+            self::malformed();
+        }
+        $out = [];
+        foreach ($fonts as $font) {
+            if (! is_array($font)) {
+                self::malformed();
+            }
+            foreach (['family', 'weight', 'style'] as $field) {
+                if (! is_string($font[$field] ?? null) || mb_strlen($font[$field]) > 128) {
+                    self::malformed();
+                }
+            }
+            if (! in_array($font['status'] ?? null, ['unloaded', 'loading', 'loaded', 'error'], true)) {
+                self::malformed();
+            }
+            $out[] = ['family' => $font['family'], 'weight' => $font['weight'], 'style' => $font['style'], 'status' => $font['status']];
+        }
+
+        return $out;
+    }
+
+    /** @return list<array{family: string, glyph_count: int, custom: bool}> */
+    private static function renderedFonts(mixed $fonts): array
+    {
+        if (! is_array($fonts) || ! array_is_list($fonts) || count($fonts) > 20) {
+            self::malformed();
+        }
+        $out = [];
+        foreach ($fonts as $font) {
+            if (! is_array($font) || ! is_string($font['family'] ?? null) || mb_strlen($font['family']) > 128
+                || ! is_int($font['glyph_count'] ?? null) || $font['glyph_count'] < 0 || $font['glyph_count'] > 9007199254740991
+                || ! is_bool($font['custom'] ?? null)) {
+                self::malformed();
+            }
+            $out[] = ['family' => $font['family'], 'glyph_count' => $font['glyph_count'], 'custom' => $font['custom']];
+        }
+
+        return $out;
     }
 
     /**

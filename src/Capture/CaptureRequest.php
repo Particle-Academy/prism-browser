@@ -24,6 +24,9 @@ use Prism\Browser\Exceptions\BrowserRefused;
  *   images. load, network idle, fonts and a ready marker are all satisfied by a page whose image 404s, so without
  *   this a broken page is captured as if it were the real one. A lazy image that never loads counts as failed:
  *   render captures with eager images. Works on a page that allows no script.
+ * - requireFonts: up to 16 family/weight/style faces must be declared and loaded. Sampled text whose first family
+ *   matches must supply custom font glyphs; partial fallback for emoji/symbols is allowed. Failure is
+ *   `capture_fonts_failed`, with bounded failed_fonts in BrowserRefused::context(). Works with script-src 'none'.
  */
 final readonly class CaptureRequest
 {
@@ -31,6 +34,9 @@ final readonly class CaptureRequest
 
     /** @var list<int> */
     public array $widths;
+
+    /** @var list<array{family: string, weight: int, style: string}> */
+    public array $requireFonts;
 
     /**
      * @param  array<mixed>  $widths  integers; anything else is refused at runtime, as a caller's array may hold anything
@@ -48,6 +54,7 @@ final readonly class CaptureRequest
         public int $maxBytes = 15 * 1024 * 1024,
         public int $timeoutSeconds = 30,
         public bool $requireImages = false,
+        mixed $requireFonts = [],
     ) {
         $widths = array_values(array_unique($widths));
         if ($widths === [] || count($widths) > 8) {
@@ -63,6 +70,20 @@ final readonly class CaptureRequest
             self::invalid();
         }
         $this->widths = $widths;
+        if (! is_array($requireFonts) || ! array_is_list($requireFonts) || count($requireFonts) > 16) {
+            self::invalid();
+        }
+        $fonts = [];
+        foreach ($requireFonts as $face) {
+            if (! is_array($face) || ! is_string($face['family'] ?? null) || trim($face['family'], " \t\n\r\v\f") === ''
+                || ! mb_check_encoding($face['family'], 'UTF-8') || mb_strlen($face['family'], 'UTF-8') > 128
+                || ! is_int($face['weight'] ?? null) || $face['weight'] < 1 || $face['weight'] > 1000
+                || ! in_array($face['style'] ?? null, ['normal', 'italic', 'oblique'], true)) {
+                self::invalid();
+            }
+            $fonts[] = ['family' => $face['family'], 'weight' => $face['weight'], 'style' => $face['style']];
+        }
+        $this->requireFonts = $fonts;
     }
 
     /** @return array<string, mixed> the sidecar's request body, less the URL */
@@ -79,6 +100,7 @@ final readonly class CaptureRequest
             'max_bytes' => $this->maxBytes,
             'timeout_ms' => $this->timeoutSeconds * 1000,
             'require_images' => $this->requireImages,
+            'require_fonts' => $this->requireFonts,
         ];
     }
 
