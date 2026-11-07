@@ -9,7 +9,7 @@
         "ext-json": "*",
         "ext-mbstring": "*",
         "laravel/framework": "^12.69.0|^13.30.0",
-        "particle-academy/prism": ">=0.114 <1.0",
+        "particle-academy/prism": ">=0.114 <1.0 || ^0.147",
         "symfony/process": "^7.2|^8.0"
     },
     "require-dev": {
