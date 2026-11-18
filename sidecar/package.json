@@ -5,5 +5,5 @@
   "type": "module",
   "engines": {"node": ">=22"},
   "scripts": {"start": "node server.mjs", "test": "node --test"},
-  "dependencies": {"playwright": "1.62.1"}
+  "dependencies": {"playwright": "1.65.1"}
 }
