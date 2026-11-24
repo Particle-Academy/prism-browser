@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Prism\Browser\Engine;
 
 use Illuminate\Http\Client\Factory;
+use Illuminate\Http\Client\HttpClientException;
+use InvalidArgumentException;
 use Prism\Browser\Contracts\BrowserEngine;
 use Prism\Browser\Data\BrowserAction;
 use Prism\Browser\Data\Observation;
@@ -63,12 +65,16 @@ final readonly class PlaywrightSidecarEngine implements BrowserEngine
      */
     private function request(string $operation, array $payload): array
     {
-        $response = $this->http->baseUrl(rtrim($this->baseUrl, '/'))
-            ->withToken($this->token)->acceptJson()->timeout($this->timeoutSeconds)
-            ->withOptions(SameOriginRedirects::options($this->baseUrl, static fn (): BrowserRefused => new BrowserRefused(
+        $request = $this->http->baseUrl(rtrim($this->baseUrl, '/'))
+            ->withToken($this->token)->acceptJson()->timeout($this->timeoutSeconds);
+        try {
+            $response = SameOriginRedirects::apply($request, $this->baseUrl, static fn (): BrowserRefused => new BrowserRefused(
                 'sidecar_redirect_refused', 'Browser sidecar redirected to a different origin; the redirect was not followed.',
-            )))
-            ->post('/v1/'.$operation, $payload);
+            ))->post('/v1/'.$operation, $payload);
+        } catch (HttpClientException|InvalidArgumentException) {
+            // Unreachable, too many redirects, or a Location the HTTP client cannot parse.
+            throw new BrowserRefused('sidecar_failed', 'Browser sidecar could not be reached.');
+        }
         if (! $response->successful()) {
             $reason = $response->json('error');
             throw new BrowserRefused(is_string($reason) ? $reason : 'sidecar_failed', 'Browser sidecar refused or failed the operation.');

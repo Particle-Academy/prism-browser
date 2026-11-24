@@ -4,8 +4,9 @@ declare(strict_types=1);
 
 namespace Prism\Browser\Capture;
 
-use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Factory;
+use Illuminate\Http\Client\HttpClientException;
+use InvalidArgumentException;
 use Prism\Browser\Exceptions\BrowserRefused;
 use Prism\Browser\Support\SameOriginRedirects;
 use Prism\Prism\ValueObjects\Media\Image;
@@ -44,15 +45,15 @@ final readonly class PageCapture
             throw new BrowserRefused('capture_origin_not_declared', 'The URL is not on a declared capture origin.');
         }
         try {
-            $response = $this->http->baseUrl(rtrim($this->baseUrl, '/'))
+            $pending = $this->http->baseUrl(rtrim($this->baseUrl, '/'))
                 ->withToken($this->token)->acceptJson()
-                ->withOptions(SameOriginRedirects::options($this->baseUrl, static fn (): BrowserRefused => new BrowserRefused(
-                    'sidecar_redirect_refused', 'The browser sidecar redirected to a different origin; the redirect was not followed.',
-                )))
                 // The sidecar enforces the capture's own budget; this only stops a sidecar that never answers.
-                ->timeout($request->timeoutSeconds + 15)
-                ->post('/v1/capture', ['url' => $url, ...$request->toArray()]);
-        } catch (ConnectionException) {
+                ->timeout($request->timeoutSeconds + 15);
+            $response = SameOriginRedirects::apply($pending, $this->baseUrl, static fn (): BrowserRefused => new BrowserRefused(
+                'sidecar_redirect_refused', 'The browser sidecar redirected to a different origin; the redirect was not followed.',
+            ))->post('/v1/capture', ['url' => $url, ...$request->toArray()]);
+        } catch (HttpClientException|InvalidArgumentException) {
+            // Unreachable, too many redirects, or a Location the HTTP client cannot parse.
             throw new BrowserRefused('sidecar_failed', 'The browser sidecar could not be reached.');
         }
         if (! $response->successful()) {
