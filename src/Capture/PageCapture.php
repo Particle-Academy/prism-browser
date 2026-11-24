@@ -7,6 +7,7 @@ namespace Prism\Browser\Capture;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Factory;
 use Prism\Browser\Exceptions\BrowserRefused;
+use Prism\Browser\Support\SameOriginRedirects;
 use Prism\Prism\ValueObjects\Media\Image;
 
 /**
@@ -21,7 +22,7 @@ use Prism\Prism\ValueObjects\Media\Image;
  *
  * Refusals are BrowserRefused codes: `capture_origin_not_declared`, `invalid_capture_options`, `capture_too_large`,
  * `capture_timeout`, `capture_failed`, `capture_unavailable` (the sidecar has no declared origins),
- * `malformed_sidecar_response`, `sidecar_failed`.
+ * `malformed_sidecar_response`, `sidecar_failed`, `sidecar_redirect_refused` (the sidecar redirected to another origin).
  */
 final readonly class PageCapture
 {
@@ -45,6 +46,9 @@ final readonly class PageCapture
         try {
             $response = $this->http->baseUrl(rtrim($this->baseUrl, '/'))
                 ->withToken($this->token)->acceptJson()
+                ->withOptions(SameOriginRedirects::options($this->baseUrl, static fn (): BrowserRefused => new BrowserRefused(
+                    'sidecar_redirect_refused', 'The browser sidecar redirected to a different origin; the redirect was not followed.',
+                )))
                 // The sidecar enforces the capture's own budget; this only stops a sidecar that never answers.
                 ->timeout($request->timeoutSeconds + 15)
                 ->post('/v1/capture', ['url' => $url, ...$request->toArray()]);
