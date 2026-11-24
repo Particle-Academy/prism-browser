@@ -10,6 +10,7 @@ use Prism\Browser\Data\BrowserAction;
 use Prism\Browser\Data\Observation;
 use Prism\Browser\Exceptions\BrowserRefused;
 use Prism\Browser\Security\BrowserPolicy;
+use Prism\Browser\Support\SameOriginRedirects;
 
 final readonly class PlaywrightSidecarEngine implements BrowserEngine
 {
@@ -64,6 +65,9 @@ final readonly class PlaywrightSidecarEngine implements BrowserEngine
     {
         $response = $this->http->baseUrl(rtrim($this->baseUrl, '/'))
             ->withToken($this->token)->acceptJson()->timeout($this->timeoutSeconds)
+            ->withOptions(SameOriginRedirects::options($this->baseUrl, static fn (): BrowserRefused => new BrowserRefused(
+                'sidecar_redirect_refused', 'Browser sidecar redirected to a different origin; the redirect was not followed.',
+            )))
             ->post('/v1/'.$operation, $payload);
         if (! $response->successful()) {
             $reason = $response->json('error');

@@ -203,7 +203,11 @@ Raised in process: `invalid_url`, `url_credentials_refused`, `https_required`,
 `action_not_allowed`, `observation_too_large`, `stale_observation`,
 `stale_generation`, `attachment_not_found`, `attachment_owner_mismatch`,
 `attachment_not_open`, `corrupt_attachment`, `locking_unavailable`,
-`malformed_sidecar_response`, `sidecar_failed`.
+`malformed_sidecar_response`, `sidecar_failed`, `sidecar_redirect_refused`.
+
+A sidecar redirect is followed only when it keeps the configured sidecar URL's
+scheme, host and port. A redirect anywhere else raises
+`sidecar_redirect_refused`, and no request is made to the other location.
 
 **A sidecar's code reaches the caller verbatim.** `PlaywrightSidecarEngine`
 puts whatever the sidecar named into the `BrowserRefused` it raises, so the
