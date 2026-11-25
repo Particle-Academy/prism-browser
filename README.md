@@ -209,7 +209,8 @@ A sidecar redirect is followed only when it keeps the configured sidecar URL's
 scheme, host and port. A redirect anywhere else raises
 `sidecar_redirect_refused`, and no request is made to the other location. An
 application that turned redirects off (`Http::globalOptions(['allow_redirects'
-=> false])`) keeps them off for sidecar calls: nothing is followed. A sidecar
+=> false])`, or any other empty value: `0`, `''` or `null`) keeps them off for
+sidecar calls: nothing is followed. A sidecar
 that cannot be reached, a redirect loop, or a Location the HTTP client cannot
 parse raises `sidecar_failed`, from the engine and from page capture alike.
 

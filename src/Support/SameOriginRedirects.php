@@ -23,7 +23,8 @@ use Throwable;
  * from the request objects.
  *
  * An application that turned redirects off (`Http::globalOptions(['allow_redirects'
- * => false])`) keeps them off: nothing is followed.
+ * => false])`, or any other empty value: 0, '' or null) keeps them off: nothing
+ * is followed.
  */
 final class SameOriginRedirects
 {
@@ -35,8 +36,12 @@ final class SameOriginRedirects
      */
     public static function apply(PendingRequest $request, string $url, Closure $refusal): PendingRequest
     {
-        if (($request->getOptions()['allow_redirects'] ?? null) === false) {
-            return $request;
+        $options = $request->getOptions();
+
+        // Any empty value is off to Guzzle (false, 0, '', null). Sent on as an
+        // explicit false, so it reads the same to every client version.
+        if (array_key_exists('allow_redirects', $options) && empty($options['allow_redirects'])) {
+            return $request->withOptions(['allow_redirects' => false]);
         }
 
         return $request->withOptions(self::options($url, $refusal));
