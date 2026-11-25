@@ -227,7 +227,70 @@ it('follows no redirect when the application turned redirects off', function (mi
     'zero' => [0],
     'empty string' => [''],
     'null' => [null],
+    'empty array' => [[]],
+    'string zero' => ['0'],
+    // Laravel's maxRedirects(0) writes this shape.
+    'max 0' => [['max' => 0]],
+    'max null' => [['max' => null]],
+    'max string zero' => [['max' => '0']],
+    'max false' => [['max' => false]],
+    'max -1' => [['max' => -1]],
+    'max not a number' => [['max' => 'abc']],
+    'max a fraction' => [['max' => 1.5]],
+    'max 0 beside other settings' => [['max' => 0, 'strict' => true, 'on_redirect' => static fn () => null]],
+    // Values the HTTP client itself rejects are off, never a default that follows.
+    'string false' => ['false'],
+    'string true' => ['true'],
+    'int 1' => [1],
+    'string 1' => ['1'],
 ])->with('sidecar entry points');
+
+it('follows no more redirects than the application allows', function (mixed $setting, int $requests, string $entry): void {
+    $this->sidecar->answer([['match' => '/v1/', 'status' => 307, 'location' => '/v1/again']]);
+    $http = new Factory;
+    $http->globalOptions(['allow_redirects' => $setting]);
+
+    [$code] = sidecarCall($entry, $this->sidecar->origin(), $http);
+
+    expect($code)->toBe('sidecar_failed')
+        ->and($this->sidecar->requests())->toHaveCount($requests)
+        ->and($this->elsewhere->requests())->toBe([]);
+})->with([
+    'max 1' => [['max' => 1], 2],
+    'max 2' => [['max' => 2], 3],
+    'max as a digit string' => [['max' => '2'], 3],
+    'max above the ceiling' => [['max' => 50], 6],
+    'true' => [true, 6],
+])->with('sidecar entry points');
+
+it("calls the application's own on_redirect hook for a redirect it follows", function (string $entry): void {
+    $this->sidecar->answer([['match' => '/v1/', 'status' => 307, 'location' => '/landed']], body: '{"checkpoint":"cp_1"}');
+    $seen = [];
+    $http = new Factory;
+    $http->globalOptions(['allow_redirects' => ['on_redirect' => function (mixed $request, mixed $response, Stringable $next) use (&$seen): void {
+        $seen[] = (string) $next;
+    }]]);
+
+    sidecarCall($entry, $this->sidecar->origin(), $http);
+
+    expect($seen)->toBe([$this->sidecar->origin().'/landed'])
+        ->and($this->sidecar->requests())->toHaveCount(2);
+})->with('sidecar entry points');
+
+it("does not call the application's on_redirect hook for a redirect it refuses", function (string $entry): void {
+    $this->sidecar->answer([['match' => '/v1/', 'status' => 307, 'location' => $this->elsewhere->origin().'/landed']]);
+    $seen = [];
+    $http = new Factory;
+    $http->globalOptions(['allow_redirects' => ['on_redirect' => function (mixed $request, mixed $response, Stringable $next) use (&$seen): void {
+        $seen[] = (string) $next;
+    }]]);
+
+    [$code] = sidecarCall($entry, $this->sidecar->origin(), $http);
+
+    expect($seen)->toBe([])
+        ->and($code)->toBe('sidecar_redirect_refused')
+        ->and($this->elsewhere->requests())->toBe([]);
+})->with('sidecar entry points');
 
 it('keeps the origin check when the application allows redirects', function (mixed $setting, string $entry): void {
     $this->sidecar->answer([['match' => '/v1/', 'status' => 307, 'location' => $this->elsewhere->origin().'/landed']]);

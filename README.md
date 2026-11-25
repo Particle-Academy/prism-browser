@@ -208,9 +208,19 @@ Raised in process: `invalid_url`, `url_credentials_refused`, `https_required`,
 A sidecar redirect is followed only when it keeps the configured sidecar URL's
 scheme, host and port. A redirect anywhere else raises
 `sidecar_redirect_refused`, and no request is made to the other location. An
-application that turned redirects off (`Http::globalOptions(['allow_redirects'
-=> false])`, or any other empty value: `0`, `''` or `null`) keeps them off for
-sidecar calls: nothing is followed. A sidecar
+application-wide `allow_redirects` setting is read the way the HTTP client reads
+it, and sidecar calls never follow more than 5 hops:
+
+- Redirects off stays off: nothing is followed. Off is `false` or any other
+  empty value (`0`, `''`, `null`, `[]`), and an array whose `max` is empty or
+  not a positive whole number (`['max' => 0]`, which is what
+  `maxRedirects(0)` writes, `['max' => null]`, `['max' => -1]`). A value the
+  HTTP client would reject (`'false'`, `1`, an object) is also read as off.
+- A smaller `max` holds: `['max' => 2]` follows at most 2 hops.
+- The application's own `on_redirect` hook is still called, but only for a
+  same-origin hop that is about to be followed; a refused hop never reaches it.
+
+A sidecar
 that cannot be reached, a redirect loop, or a Location the HTTP client cannot
 parse raises `sidecar_failed`, from the engine and from page capture alike.
 
