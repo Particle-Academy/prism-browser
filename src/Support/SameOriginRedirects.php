@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Prism\Browser\Support;
 
 use Closure;
+use Illuminate\Http\Client\PendingRequest;
 use Stringable;
 use Throwable;
 
@@ -20,9 +21,27 @@ use Throwable;
  * Every hop is checked against the configured origin rather than the previous
  * hop, which is the same answer when each hop must match, and needs nothing
  * from the request objects.
+ *
+ * An application that turned redirects off (`Http::globalOptions(['allow_redirects'
+ * => false])`) keeps them off: nothing is followed.
  */
 final class SameOriginRedirects
 {
+    /**
+     * The request, restricted to same-origin redirects, or left following none
+     * when redirects were already turned off for it.
+     *
+     * @param  Closure(): Throwable  $refusal  what to throw when the origin changes
+     */
+    public static function apply(PendingRequest $request, string $url, Closure $refusal): PendingRequest
+    {
+        if (($request->getOptions()['allow_redirects'] ?? null) === false) {
+            return $request;
+        }
+
+        return $request->withOptions(self::options($url, $refusal));
+    }
+
     /**
      * @param  Closure(): Throwable  $refusal  what to throw when the origin changes
      * @return array{allow_redirects: array{max: int, on_redirect: Closure}}
