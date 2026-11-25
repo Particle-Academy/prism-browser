@@ -44,6 +44,9 @@ it('reads an allow_redirects setting the way the HTTP client does', function (mi
     'max string 3' => [['max' => '3'], 3],
     'max 5' => [['max' => 5], 5],
     'max 50' => [['max' => 50], 5],
+    'max with a leading space' => [['max' => ' 3'], null],
+    'max with a trailing newline' => [['max' => "3\n"], null],
+    'max too large for an int' => [['max' => '99999999999999999999'], 5],
 ]);
 
 it('treats the default port and an explicit default port as one origin', function (string $a, string $b): void {
