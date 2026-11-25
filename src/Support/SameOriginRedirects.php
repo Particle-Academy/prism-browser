@@ -109,7 +109,7 @@ final class SameOriginRedirects
         }
 
         $max = $setting['max'];
-        if (is_string($max) && preg_match('/^[0-9]{1,9}$/D', $max) === 1) {
+        if (is_string($max) && preg_match('/^[0-9]+$/D', $max) === 1) {
             $max = (int) $max;
         }
         if (! is_int($max) || $max < 1) {
