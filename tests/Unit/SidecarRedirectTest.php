@@ -213,16 +213,21 @@ it('compares the sidecar host case-insensitively', function (): void {
         ->and($this->sidecar->requests())->toHaveCount(2);
 });
 
-it('follows no redirect when the application turned redirects off', function (string $entry): void {
+it('follows no redirect when the application turned redirects off', function (mixed $off, string $entry): void {
     $this->sidecar->answer([['match' => '/v1/', 'status' => 307, 'location' => '/landed']], body: '{"checkpoint":"cp_1"}');
     $http = new Factory;
-    $http->globalOptions(['allow_redirects' => false]);
+    $http->globalOptions(['allow_redirects' => $off]);
 
     [$code] = sidecarCall($entry, $this->sidecar->origin(), $http);
 
     expect($this->sidecar->requests())->toHaveCount(1)
         ->and($code)->toBe('sidecar_failed');
-})->with('sidecar entry points');
+})->with([
+    'false' => [false],
+    'zero' => [0],
+    'empty string' => [''],
+    'null' => [null],
+])->with('sidecar entry points');
 
 it('keeps the origin check when the application allows redirects', function (mixed $setting, string $entry): void {
     $this->sidecar->answer([['match' => '/v1/', 'status' => 307, 'location' => $this->elsewhere->origin().'/landed']]);
